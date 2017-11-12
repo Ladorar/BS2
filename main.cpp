@@ -28,7 +28,6 @@ int launch(vector<string> args) {
 
     pid = fork();
 
-
     if (pid == 0) {
         //Child Process
         if (execvp(cstr[0], cstr) == -1)
