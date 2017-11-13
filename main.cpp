@@ -1,13 +1,14 @@
 
 
 #include <cstdlib>
-#include <iostream>
-#include <string>
-#include <sstream>
-#include <vector>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <signal.h>
+#include <iostream>
+#include <vector>
 
 using namespace std;
 
@@ -15,93 +16,101 @@ void handle_SIGCHLD(int signum) {
     //Child process paused or exited
     pid_t pid;
     pid = wait(NULL);
-    cout << "pid: " << pid << " exited" << std::endl;
+    cout << "pid: " << pid << " exited" << endl;
 }
 
-int launch(vector<string> args) {
-    //Converting vector to char* to call execvp with
-    char ** cstr = new char* [args.size()];
-    for (int i = 0; i < args.size(); i++) {
-        cstr[i] = (char*) args[i].c_str();
+int launch(char** args) {
+    pid_t pid, wpid;
+    int status;
+    string s(args[0]);
+    bool bk_process = (s.back() == '&');
+
+    if (bk_process) {
+        s.erase(s.end() - 1);
+        cout << s << endl;
+        const char* prog = s.c_str();
+        args[0] = strdup(prog);
     }
-    int pid, wpid, status;
-
+    
     pid = fork();
-
     if (pid == 0) {
-        //Child Process
-        if (execvp(cstr[0], cstr) == -1)
-            //Error on exec
-            return 0;
+        //Kind Prozess
+        if (execvp(args[0], args) == -1) {
+            cerr << "Error on exec." << endl;
+            //Beendet den Process falls etwas schief geht
+            exit(EXIT_FAILURE);
+        }
     } else if (pid < 0) {
-        //error forking
-        return 0;
+        //Fehler beim fork-Systemaufruf
+        cerr << "Error on fork." << endl;
     } else {
-        //Parent Process
-        if (args[1] == "&" || args.at(0).back() == '&') {
-            //Run in Backgound -> Dont wait for process to finish
-            cout << "started pid: " << pid << endl;
+        if (bk_process) {
+            cout << "Started " << args[0] << " in background with PID: " << pid << endl;
         } else {
-            //Wait for Child Process to finish
             do {
                 wpid = waitpid(pid, &status, WUNTRACED);
             } while (!WIFEXITED(status) && !WIFSIGNALED(status));
         }
     }
-
-    delete[] cstr;
-    //Child Process done and the Shell can continue
     return 1;
 }
 
-int execute(vector<string> args) {
-    if (args[0] == "logout")
-        return 99;
-    else
-        return launch(args);
-}
-
-vector<string> split_line(const string& line) {
-    vector<string> args;
-    stringstream ss;
-    ss.str(line);
-    string temp;
-    while (!ss.eof()) {
-        ss >> temp;
-        args.push_back(temp);
+int execute(char** args) {
+    string temp(args[0]);
+    if (args[0] == NULL) {
+        cout << "Invalid command." << endl;
+        return 1;
     }
-    return args;
+    else if (temp == "logout" || temp == "Logout") return 99;
+    return launch(args);
 }
 
-string read_line() {
-    string line;
-    getline(cin, line);
-    return line;
+char** split_line(char* line) {
+    vector<char*> vec;
+    char* token;
+
+    token = strtok(line, " \t\r\n\a");
+    while (token != NULL) {
+        vec.push_back(token);
+        token = strtok(NULL, " \t\r\n\a");
+    }
+    char** tokens = new char*[vec.size()];
+    for (int i = 0; i < vec.size(); i++)
+        tokens[i] = vec[i];
+    return tokens;
+}
+
+char* read_line() {
+    char* temp = new char[256];
+    cin.getline(temp, 256);
+    return temp;
 }
 
 void loop() {
+    string sinput;
     int status = 1;
-    string input;
-    vector<string> params;
+    char* input;
+    char** params;
     do {
         cout << ">" << flush;
         input = read_line();
-        //cout << "Input: " << input << endl;
-        if (!input.empty()) {
-            params = split_line(input);
-            status = execute(params);
-            if (status == 0)
-                cout << "Error launching!" << endl;
-            else if (status == 99) {
-                cout << "Wollen Sie die Shell wirklich beenden (J/N)?" << endl << ">";
-                cin >> input;
-                cout << endl;
-                if (input == "J" || input == "j") return;
-                else if (input == "N" || input == "n") status = 1;
-                else {
-                    cout << "Falsche Eingabe!" << endl;
-                    status = 1;
-                }
+        params = split_line(input);
+        status = execute(params);
+        //for (int i = 0; i < 5; i++)
+        //   cout << "Input: " << params[i] << endl;
+        delete input;
+        delete[] params;
+        if (status == 0)
+            cout << "Error launching!" << endl;
+        else if (status == 99) {
+            cout << "Wollen Sie die Shell wirklich beenden (J/N)?" << endl << ">" << flush;
+            cin >> sinput;
+            cout << endl;
+            if (sinput == "J" || sinput == "j") return;
+            else if (sinput == "N" || sinput == "n") status = 1;
+            else {
+                cout << "Falsche Eingabe!" << endl;
+                status = 1;
             }
         }
     } while (status);
@@ -115,4 +124,3 @@ int main(int argc, char** argv) {
     loop();
     return 0;
 }
-
